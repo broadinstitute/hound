@@ -63,12 +63,12 @@ class SnowflakeClient(object):
         """
         with self.lock:
             ctime = time.time()
-            while ctime <= self.last_time:
-                time.sleep(0.5 + (self.last_time - ctime))
+            while ctime < self.last_time:
+                time.sleep(0.05 + (self.last_time - ctime))
                 ctime = time.time()
             head = struct.pack(
                 self.HEAD_FORMAT,
-                ctime - self.offset,
+                ctime,
                 self.machine_id,
                 self.client_id,
                 self.sequence_id,

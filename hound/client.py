@@ -7,6 +7,7 @@ from socket import gethostname
 from getpass import getuser
 import time
 import os
+import calendar
 import pandas as pd
 
 @lru_cache()
@@ -309,12 +310,19 @@ class HoundClient(object):
         Only logs since that value will be returned
         Probably ordered, but this is not guaranteed by Google
         """
+        yield from self._yield_logs(self._iread_log_internal(log_type, since))
+
+    def _iread_log_internal(self, log_type, since):
+        """
+        Backend for iread_log
+        Yields blob objects, since they are faster to list
+        """
         if log_type not in {'job', 'upload', 'other', 'meta'}:
             raise TypeError("log_type must be one of {'job', 'upload', 'other', 'meta'}")
-        if isinstance(since, (float, int)):
-            since = time.gmtime(since)
-        for entry in self._yield_logs(self.get_entries('hound/logs/{}/'.format(log_type))):
-            if since is None or since <= time.strptime(entry.timestamp, TIMESTAMP_FORMAT):
+        if isinstance(since, time.struct_time):
+            since = calendar.timegm(since)
+        for entry in self.get_entries('hound/logs/{}/'.format(log_type)):
+            if since is None or since <= self.snowflake_client.unpack(os.path.basename(entry.name)).time:
                 yield entry
 
     def read_log(self, log_type, since=None):
