@@ -49,11 +49,11 @@ Request format:
 }
 ```
 
-## GCS spec
+## Format
 
-An alternative specification would only use regular google-cloud-storage to operate
-
-This format would use the workspace bucket to store metadata in organized files
+Hound logs data in a bucket folder. Entries are organized based on the list below.
+`snowflake` refers to an auto-generated ID from Hound's snowflake implementation.
+Snowflakes are almost guaranteed to be unique (see below)
 
 * hound/: Root folder for hound data in bucket
   * (samples|pairs|participants|sets)/: Folder for entity-metadata change logs
@@ -63,7 +63,7 @@ This format would use the workspace bucket to store metadata in organized files
   * workspace/: Folder for workspace-level metadata
     * (attribute)/: Folder for attribute data on the workspace
       * (snowflake): Serial numbered files containing **update objects**
-  * log/: Folder for event-logs
+  * logs/: Folder for event-logs
     * (job|upload|meta|other)/: Folder for specific event entries
       * (snowflake): Files containing **log entries**
 
@@ -76,4 +76,11 @@ Encode 22-byte snowflake into 44 byte (hex encoded) object name
 * 8-bit (1 byte) Zero field (reserved)
 * 8-bit (1 byte) checksum field (sum of remaining fields)
 
-Format: `>dQHHxc`
+#### Uniqueness
+
+Snowflakes are structured to almost guarantee uniqueness. If two clients from the
+same machine (or from machines with identical MAC addresses) create a snowflake
+at **exactly** the same time (within their system clocks' precisions) **AND** the
+clients have generated the same number of snowflakes so far (clients have the same
+  sequence id), there is a 1/65536 chance that the snowflakes will collide (based on
+  client id).
