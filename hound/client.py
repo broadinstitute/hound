@@ -90,6 +90,23 @@ class HoundClient(object):
         finally:
             self.context_reason.reason = old_reason
 
+    @property
+    def log_volume(self):
+        """
+        Tuple: (number of hound entires, total size of hound entries)
+        """
+        size = 0
+        count = 0
+        for page in self.bucket.list_blobs(prefix='hound').pages:
+            for blob in page:
+                count += 1
+                try:
+                    blob.reload()
+                    size += blob.size
+                except:
+                    pass
+        return (count, size)
+
     def write(self, path, data):
         """
         Low-level write
@@ -293,6 +310,8 @@ class HoundClient(object):
         """
         Iterates over log entires at a given path
         """
+        if not path.endswith('/'):
+            path += '/'
         for page in self.bucket.list_blobs(prefix=path).pages:
             yield from page
 
