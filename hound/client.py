@@ -202,8 +202,9 @@ class HoundClient(object):
             'hound/logs/meta',
             {
                 'entities': [os.path.join(etype, entity)],
-                'text': 'snowflake={}; Add/Removed entity (meta-event)'.format(
+                'text': 'snowflake={}; Modified {} (meta-event)'.format(
                     os.path.basename(blob.name),
+                    etype
                 )
             }
         )
