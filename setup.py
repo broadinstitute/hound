@@ -1,6 +1,9 @@
 from setuptools import setup
 from hound import __version__
 
+with open('README.md') as r:
+    long_description = r.read()
+
 setup(
     name = 'hound',
     version = __version__,
@@ -11,7 +14,8 @@ setup(
     url = 'https://github.com/broadinstitute/hound',
     author = 'Aaron Graubert - Broad Institute - Cancer Genome Computational Analysis',
     author_email = 'aarong@broadinstitute.org',
-    long_description = 'A FireCloud database extension',
+    long_description = r,
+    long_description_content_type = 'text/markdown',
     install_requires = [
         "google-cloud-storage>=1.13.2",
         "pandas"
