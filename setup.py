@@ -12,7 +12,10 @@ setup(
     author = 'Aaron Graubert - Broad Institute - Cancer Genome Computational Analysis',
     author_email = 'aarong@broadinstitute.org',
     long_description = 'A FireCloud database extension',
-    install_requires = ["google-cloud-storage>=1.13.2",],
+    install_requires = [
+        "google-cloud-storage>=1.13.2",
+        "pandas"
+    ],
     classifiers = [
         "Programming Language :: Python :: 3",
         "Intended Audience :: Science/Research",

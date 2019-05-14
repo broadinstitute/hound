@@ -1,6 +1,6 @@
 from .snowflake import getclient, SnowflakeClient
 from google.cloud import storage
-from functools import lru_cache
+from functools import lru_cache, wraps
 import json
 from collections import namedtuple
 from socket import gethostname
@@ -9,6 +9,9 @@ import time
 import os
 import calendar
 import pandas as pd
+import threading
+import inspect
+from contextlib import contextmanager
 
 @lru_cache()
 def _getblob_client(credentials):
@@ -31,6 +34,24 @@ TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S %Z" # always UTC
 LogEntry = namedtuple("LogEntry", ['entities', 'timestamp', 'author', 'text'])
 AttributeUpdate = namedtuple("AttributeUpdate", ['entityType', 'entityName', 'attributeName', 'attributeValue', 'timestamp', 'updateReason', 'author'])
 
+def autofill_reason(func):
+    """
+    Decorator which allows autofilling the 'reason' argument using a contextual
+    binding
+    """
+
+    signature = inspect.signature(func)
+
+    @wraps(func)
+    def call_with_reason(self, *args, **kwargs):
+        arguments = signature.bind(self, *args, **kwargs).arguments
+        if 'reason' not in arguments or arguments['reason'] is None:
+            if hasattr(self.context_reason, 'reason') and self.context_reason.reason is not None:
+                arguments['reason'] = self.context_reason.reason
+        return func(**arguments)
+
+    return call_with_reason
+
 class HoundClient(object):
     def __init__(self, bucket_id, snowflake_client='__COMMON__', credentials=None, user_project=None):
         """
@@ -52,6 +73,22 @@ class HoundClient(object):
             else getclient(snowflake_client)
         )
         self.author = '{}@{}'.format(getuser(), gethostname())
+        self.context_reason = threading.local()
+
+    @contextmanager
+    def with_reason(self, reason):
+        """
+        Provide a reason which will be used as the default 'reason' value in the context
+        """
+        old_reason = None
+        try:
+            if not hasattr(self.context_reason, 'reason'):
+                self.context_reason.reason = None
+            old_reason = self.context_reason.reason
+            self.context_reason.reason = reason
+            yield
+        finally:
+            self.context_reason.reason = old_reason
 
     def write(self, path, data):
         """
@@ -87,6 +124,7 @@ class HoundClient(object):
         blob.upload_from_string(json.dumps(data))
         return blob
 
+    @autofill_reason
     def update_entity_attribute(self, etype, entity, attribute, value, reason=None):
         """
         Log an update to entity attributes
@@ -121,6 +159,7 @@ class HoundClient(object):
         )
         return blob
 
+    @autofill_reason
     def update_entity_meta(self, etype, entity, event, reason=None):
         """
         Log a creation, deletion, or other meta-event on an entity
@@ -153,6 +192,7 @@ class HoundClient(object):
         )
         return blob
 
+    @autofill_reason
     def update_workspace_attribute(self, attribute, value, reason=None):
         """
         Log an update to workspace attributes
@@ -185,6 +225,7 @@ class HoundClient(object):
         )
         return blob
 
+    @autofill_reason
     def update_workspace_meta(self, event, reason=None):
         """
         Log a creation, deletion, or other meta-event on the workspace
@@ -208,7 +249,7 @@ class HoundClient(object):
             'hound/logs/meta',
             {
                 'entities': ['workspace'],
-                'text': 'snowflake={}; Add/Removed entity (meta-event)'.format(
+                'text': 'snowflake={}; Modified Workspace (meta-event)'.format(
                     os.path.basename(blob.name),
                 )
             }
@@ -405,6 +446,7 @@ class HoundClient(object):
             key=lambda entry: time.strptime(entry.timestamp, TIMESTAMP_FORMAT)
         )
 
+    @autofill_reason
     def record_entity_upload(self, etype, data, entity_id=None, reason=None):
         """
         Record an entity upload
@@ -424,3 +466,13 @@ class HoundClient(object):
         self.update_entity_meta(etype, entity_id, "User uploaded new entity", reason)
         for attribute, value in data.items():
             self.update_entity_attribute(etype, entity_id, attribute, value, reason)
+
+    def get_record_from_snowflake(self, snowflake):
+        """
+        Fetches an entry in the Hound database from it's snowflake (filename).
+        Useful for finding a log entry using the snowflake given in a meta log entry
+        """
+        for page in self.bucket.list_blobs(prefix='hound').pages:
+            for blob in page:
+                if os.path.basename(blob.name) == snowflake:
+                    return json.loads(blob.download_as_string())
