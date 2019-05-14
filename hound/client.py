@@ -341,7 +341,7 @@ class HoundClient(object):
             if latest is None or snowflake.time > latest.time:
                 latest = snowflake
                 latest_blob = entry
-        return latest_blob if entryType is None else entryType(latest_blob)
+        return latest_blob if latest_blob is None or entryType is None else entryType(latest_blob)
 
     def iread_log(self, log_type, since=None):
         """
@@ -397,7 +397,7 @@ class HoundClient(object):
         elif entity is not None and attribute is not None:
             source = self.get_entries(os.path.join('hound', etype, entity, attribute))
         for entry in self._yield_updates(source):
-            if (attribute is None and entity.attributeName != '__meta__') or entry.attributeName == attribute:
+            if (attribute is None and entry.attributeName != '__meta__') or entry.attributeName == attribute:
                 yield entry
 
 
@@ -414,7 +414,7 @@ class HoundClient(object):
         else:
             source = self.get_entries(os.path.join('hound', 'workspace', attribute))
         for entry in self._yield_updates(source):
-            if (attribute is None and entity.attributeName != '__meta__') or entity.attributeName == attribute:
+            if (attribute is None and entry.attributeName != '__meta__') or entry.attributeName == attribute:
                 yield entry
 
     def entity_attribute_provenance(self, etype, entity=None, attribute=None):
