@@ -21,6 +21,14 @@ def _getblob_client(credentials):
 def _getblob_bucket(credentials, bucket_id, user_project):
     return _getblob_client(credentials).bucket(bucket_id, user_project)
 
+def _bulk_upload(bucket, data):
+    print("Hound executing batch upload of", len(data), "records")
+    main_thread = threading.main_thread()
+    for i, (path, obj) in enumerate(data.items()):
+        storage.Blob(path, bucket).upload_from_string(json.dumps(obj))
+        if i % 10 == 0 and not main_thread.is_alive():
+            print("Hound is still updating records in the background. Python will close when it's done")
+
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S %Z" # always UTC
 
 # hound/(entity)/(entity id)/(attribute) : For updates to entity attributes (update object)
@@ -74,6 +82,28 @@ class HoundClient(object):
         )
         self.author = '{}@{}'.format(getuser(), gethostname())
         self.context_reason = threading.local()
+        self._batch = threading.local()
+
+    @contextmanager
+    def batch(self):
+        """
+        Prepares a background batch update
+        """
+        try:
+            if not hasattr(self._batch, 'batch'):
+                self._batch.batch = None
+            if self._batch.batch is not None:
+                raise ValueError("Cannot nest batch requests")
+            self._batch.batch = {} # path -> json
+            yield
+            threading.Thread(
+                target=_bulk_upload,
+                args=(self.bucket, {**self._batch.batch}),
+                daemon=False,
+                name="Hound batch upload"
+            ).start()
+        finally:
+            self._batch.batch = None
 
     @contextmanager
     def with_reason(self, reason):
@@ -137,9 +167,12 @@ class HoundClient(object):
         if 'timestamp' not in data or data['timestamp'] is None:
             data['timestamp'] = time.strftime(TIMESTAMP_FORMAT, time.gmtime())
         path = os.path.join(path, self.snowflake_client.snowflake().hex())
-        blob = storage.Blob(path, self.bucket)
-        blob.upload_from_string(json.dumps(data))
-        return blob
+        if hasattr(self._batch, 'batch') and self._batch.batch is not None:
+            self._batch.batch[path] = data
+        else:
+            blob = storage.Blob(path, self.bucket)
+            blob.upload_from_string(json.dumps(data))
+        return path
 
     @autofill_reason
     def update_entity_attribute(self, etype, entity, attribute, value, reason=None):
@@ -154,7 +187,7 @@ class HoundClient(object):
         Also adds an entry to the meta log
         returns blob for entity log
         """
-        blob = self.write(
+        gs_path = self.write(
             os.path.join('hound', etype, entity, attribute),
             {
                 'entityType': etype,
@@ -169,12 +202,12 @@ class HoundClient(object):
             {
                 'entities': [os.path.join(etype, entity)],
                 'text': 'snowflake={}; Updated attribute: {}'.format(
-                    os.path.basename(blob.name),
+                    os.path.basename(gs_path),
                     attribute
                 )
             }
         )
-        return blob
+        return gs_path
 
     @autofill_reason
     def update_entity_meta(self, etype, entity, event, reason=None):
@@ -188,7 +221,7 @@ class HoundClient(object):
         Also adds an entry to the meta log
         returns blob for entity log
         """
-        blob = self.write(
+        gs_path = self.write(
             os.path.join('hound', etype, entity, '__meta__'),
             {
                 'entityType': etype,
@@ -203,12 +236,12 @@ class HoundClient(object):
             {
                 'entities': [os.path.join(etype, entity)],
                 'text': 'snowflake={}; Modified {} (meta-event)'.format(
-                    os.path.basename(blob.name),
+                    os.path.basename(gs_path),
                     etype
                 )
             }
         )
-        return blob
+        return gs_path
 
     @autofill_reason
     def update_workspace_attribute(self, attribute, value, reason=None):
@@ -221,7 +254,7 @@ class HoundClient(object):
         Also adds an entry to the meta log
         returns blob for entity log
         """
-        blob = self.write(
+        gs_path = self.write(
             os.path.join('hound', 'workspace', attribute),
             {
                 'entityType': 'workspace',
@@ -236,12 +269,12 @@ class HoundClient(object):
             {
                 'entities': ['workspace'],
                 'text': 'snowflake={}; Updated attribute: {}'.format(
-                    os.path.basename(blob.name),
+                    os.path.basename(gs_path),
                     attribute
                 )
             }
         )
-        return blob
+        return gs_path
 
     @autofill_reason
     def update_workspace_meta(self, event, reason=None):
@@ -253,7 +286,7 @@ class HoundClient(object):
         Also adds an entry to the meta log
         returns blob for entity log
         """
-        blob = self.write(
+        gs_path = self.write(
             'hound/workspace/__meta__',
             {
                 'entityType': 'workspace',
@@ -268,11 +301,11 @@ class HoundClient(object):
             {
                 'entities': ['workspace'],
                 'text': 'snowflake={}; Modified Workspace (meta-event)'.format(
-                    os.path.basename(blob.name),
+                    os.path.basename(gs_path),
                 )
             }
         )
-        return blob
+        return gs_path
 
     def write_log_entry(self, log_type, text, entities=None):
         """
@@ -288,7 +321,7 @@ class HoundClient(object):
         """
         if log_type not in {'job', 'upload', 'other'}:
             raise TypeError("log_type must be in {'job', 'upload', 'other'}")
-        blob = self.write(
+        gs_path = self.write(
             os.path.join('hound', 'logs', log_type),
             {
                 'entities': entities,
@@ -300,12 +333,12 @@ class HoundClient(object):
             {
                 'entities': [os.path.join('logs', log_type)],
                 'text': 'snowflake={}; Added entry to "{}" log'.format(
-                    os.path.basename(blob.name),
+                    os.path.basename(gs_path),
                     log_type
                 )
             }
         )
-        return blob
+        return gs_path
 
     def get_entries(self, path):
         """
