@@ -96,12 +96,13 @@ class HoundClient(object):
                 raise ValueError("Cannot nest batch requests")
             self._batch.batch = {} # path -> json
             yield
-            threading.Thread(
-                target=_bulk_upload,
-                args=(self.bucket, {**self._batch.batch}),
-                daemon=False,
-                name="Hound batch upload"
-            ).start()
+            if len(self._batch.batch):
+                threading.Thread(
+                    target=_bulk_upload,
+                    args=(self.bucket, {**self._batch.batch}),
+                    daemon=False,
+                    name="Hound batch upload"
+                ).start()
         finally:
             self._batch.batch = None
 
