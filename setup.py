@@ -14,7 +14,7 @@ setup(
     url = 'https://github.com/broadinstitute/hound',
     author = 'Aaron Graubert - Broad Institute - Cancer Genome Computational Analysis',
     author_email = 'aarong@broadinstitute.org',
-    long_description = r,
+    long_description = long_description,
     long_description_content_type = 'text/markdown',
     install_requires = [
         "google-cloud-storage>=1.13.2",
