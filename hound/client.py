@@ -12,6 +12,9 @@ import pandas as pd
 import threading
 import inspect
 from contextlib import contextmanager
+import warnings
+import sys
+import traceback
 
 @lru_cache()
 def _getblob_client(credentials):
@@ -24,10 +27,16 @@ def _getblob_bucket(credentials, bucket_id, user_project):
 def _bulk_upload(bucket, data):
     print("Hound executing batch upload of", len(data), "records")
     main_thread = threading.main_thread()
+    notified = False
     for i, (path, obj) in enumerate(data.items()):
-        storage.Blob(path, bucket).upload_from_string(json.dumps(obj))
-        if i % 10 == 0 and not main_thread.is_alive():
-            print("Hound is still updating records in the background. Python will close when it's done")
+        try:
+            storage.Blob(path, bucket).upload_from_string(json.dumps(obj))
+        except:
+            traceback.print_exc()
+            print("Hound record", path, "could not be written", file=sys.stderr)
+        if i % 10 == 0 and not (notified or main_thread.is_alive()):
+            print("Hound is still updating", len(data) - i, "records in the background. Python will close when it's done")
+            notified = True
 
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S %Z" # always UTC
 
@@ -89,22 +98,24 @@ class HoundClient(object):
         """
         Prepares a background batch update
         """
-        try:
-            if not hasattr(self._batch, 'batch'):
-                self._batch.batch = None
-            if self._batch.batch is not None:
-                raise ValueError("Cannot nest batch requests")
-            self._batch.batch = {} # path -> json
-            yield
-            if len(self._batch.batch):
-                threading.Thread(
-                    target=_bulk_upload,
-                    args=(self.bucket, {**self._batch.batch}),
-                    daemon=False,
-                    name="Hound batch upload"
-                ).start()
-        finally:
+        if not hasattr(self._batch, 'batch'):
             self._batch.batch = None
+        if self._batch.batch is not None:
+            warnings.warn("Nested batch requests append to the outermost batch", stacklevel=4)
+            yield
+        else:
+            try:
+                self._batch.batch = {} # path -> json
+                yield
+                if len(self._batch.batch):
+                    threading.Thread(
+                        target=_bulk_upload,
+                        args=(self.bucket, {**self._batch.batch}),
+                        daemon=False,
+                        name="Hound batch upload"
+                    ).start()
+            finally:
+                self._batch.batch = None
 
     @contextmanager
     def with_reason(self, reason):
