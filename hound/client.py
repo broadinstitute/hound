@@ -358,7 +358,7 @@ class HoundClient(object):
         """
         if not path.endswith('/'):
             path += '/'
-        for page in self.bucket.list_blobs(prefix=path).pages:
+        for page in self.bucket.list_blobs(prefix=path, fields='items/name').pages:
             yield from page
 
     def _yield_logs(self, src):
@@ -537,7 +537,7 @@ class HoundClient(object):
         Fetches an entry in the Hound database from it's snowflake (filename).
         Useful for finding a log entry using the snowflake given in a meta log entry
         """
-        for page in self.bucket.list_blobs(prefix='hound').pages:
+        for page in self.bucket.list_blobs(prefix='hound', fields='items/name').pages:
             for blob in page:
                 if os.path.basename(blob.name) == snowflake:
                     return json.loads(blob.download_as_string())
