@@ -32,7 +32,7 @@ def _bulk_upload(bucket, data):
     notified = False
     try:
         with tempfile.TemporaryDirectory() as tempdir:
-            for i, (path, obj) in enumerate(data.items()):
+            for i, (path, obj) in enumerate(data):
                 if i % 10 == 0 and not (notified or main_thread.is_alive()):
                     print("Hound is still updating", len(data) - i, "records in the background. Python will close when it's done")
                     notified = True
@@ -61,7 +61,7 @@ def _bulk_upload(bucket, data):
     except:
         traceback.print_exc()
         warnings.warn("Fast record population failed. Switching to slower fallback")
-        for i, (path, obj) in enumerate(data.items()):
+        for i, (path, obj) in enumerate(data):
             try:
                 storage.Blob(path, bucket).upload_from_string(json.dumps(obj))
             except:
@@ -143,12 +143,12 @@ class HoundClient(object):
             yield
         else:
             try:
-                self._batch.batch = {} # path -> json
+                self._batch.batch = []
                 yield
                 if len(self._batch.batch):
                     threading.Thread(
                         target=_bulk_upload,
-                        args=(self.bucket, {**self._batch.batch}),
+                        args=(self.bucket, self._batch.batch),
                         daemon=False,
                         name="Hound batch upload"
                     ).start()
@@ -167,22 +167,17 @@ class HoundClient(object):
         finally:
             self.context_reason.reason = old_reason
 
+
     @property
     def log_volume(self):
         """
         Tuple: (number of hound entires, total size of hound entries)
         """
         size = 0
-        count = 0
-        for page in self.bucket.list_blobs(prefix='hound').pages:
-            for blob in page:
-                count += 1
-                try:
-                    blob.reload()
-                    size += blob.size
-                except:
-                    pass
-        return (count, size)
+
+        for i, blob in enumerate(blob for page in self.bucket.list_blobs(prefix='hound', fields='items/name,items/size,nextPageToken').pages for blob in page):
+            size += blob.size
+        return (i+1, size)
 
     def write(self, path, data):
         """
@@ -215,7 +210,7 @@ class HoundClient(object):
             data['timestamp'] = time.strftime(TIMESTAMP_FORMAT, time.gmtime())
         path = os.path.join(path, self.snowflake_client.snowflake().hex())
         if hasattr(self._batch, 'batch') and self._batch.batch is not None:
-            self._batch.batch[path] = data
+            self._batch.batch.append((path, data))
         else:
             blob = storage.Blob(path, self.bucket)
             blob.upload_from_string(json.dumps(data))
@@ -393,7 +388,7 @@ class HoundClient(object):
         """
         if not path.endswith('/'):
             path += '/'
-        for page in self.bucket.list_blobs(prefix=path, fields='items/name').pages:
+        for page in self.bucket.list_blobs(prefix=path, fields='items/name,nextPageToken').pages:
             yield from page
 
     def _yield_logs(self, src):
@@ -572,7 +567,7 @@ class HoundClient(object):
         Fetches an entry in the Hound database from it's snowflake (filename).
         Useful for finding a log entry using the snowflake given in a meta log entry
         """
-        for page in self.bucket.list_blobs(prefix='hound', fields='items/name').pages:
+        for page in self.bucket.list_blobs(prefix='hound', fields='items/name,nextPageToken').pages:
             for blob in page:
                 if os.path.basename(blob.name) == snowflake:
                     return json.loads(blob.download_as_string())
