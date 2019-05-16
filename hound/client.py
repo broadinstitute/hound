@@ -63,7 +63,7 @@ def autofill_reason(func):
     def call_with_reason(self, *args, **kwargs):
         arguments = signature.bind(self, *args, **kwargs).arguments
         if 'reason' not in arguments or arguments['reason'] is None:
-            if hasattr(self.context_reason, 'reason') and self.context_reason.reason is not None:
+            if self.get_current_reason() is not None:
                 arguments['reason'] = self.context_reason.reason
         return func(**arguments)
 
@@ -92,6 +92,11 @@ class HoundClient(object):
         self.author = '{}@{}'.format(getuser(), gethostname())
         self.context_reason = threading.local()
         self._batch = threading.local()
+
+    def get_current_reason(self):
+        if not hasattr(self.context_reason, 'reason'):
+            self.context_reason.reason = None
+        return self.context_reason.reason
 
     @contextmanager
     def batch(self):
@@ -122,11 +127,8 @@ class HoundClient(object):
         """
         Provide a reason which will be used as the default 'reason' value in the context
         """
-        old_reason = None
+        old_reason = self.get_current_reason()
         try:
-            if not hasattr(self.context_reason, 'reason'):
-                self.context_reason.reason = None
-            old_reason = self.context_reason.reason
             self.context_reason.reason = reason
             yield
         finally:
