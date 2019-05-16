@@ -15,6 +15,8 @@ from contextlib import contextmanager
 import warnings
 import sys
 import traceback
+import tempfile
+import subprocess
 
 @lru_cache()
 def _getblob_client(credentials):
@@ -28,15 +30,46 @@ def _bulk_upload(bucket, data):
     print("Hound executing batch upload of", len(data), "records")
     main_thread = threading.main_thread()
     notified = False
-    for i, (path, obj) in enumerate(data.items()):
-        try:
-            storage.Blob(path, bucket).upload_from_string(json.dumps(obj))
-        except:
-            traceback.print_exc()
-            print("Hound record", path, "could not be written", file=sys.stderr)
-        if i % 10 == 0 and not (notified or main_thread.is_alive()):
-            print("Hound is still updating", len(data) - i, "records in the background. Python will close when it's done")
-            notified = True
+    try:
+        with tempfile.TemporaryDirectory() as tempdir:
+            for i, (path, obj) in enumerate(data.items()):
+                if i % 10 == 0 and not (notified or main_thread.is_alive()):
+                    print("Hound is still updating", len(data) - i, "records in the background. Python will close when it's done")
+                    notified = True
+                fullpath = os.path.join(tempdir, path)
+                os.makedirs(os.path.dirname(fullpath), exist_ok=True)
+                with open(fullpath, 'w') as w:
+                    json.dump(obj, w)
+            if not (notified or main_thread.is_alive()):
+                print("Hound is still updating records in the background. Python will close when it's done")
+                notified = True
+            proc = subprocess.Popen(
+                'gsutil -m -h "Content-Type:text/plain" cp -r {}/hound gs://{}'.format(
+                    tempdir,
+                    bucket.name
+                ),
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            while proc.poll() is None:
+                if not (notified or main_thread.is_alive()):
+                    print("Hound is still updating records in the background. Python will close when it's done")
+                    notified = True
+                time.sleep(10)
+            assert proc.returncode == 0
+    except:
+        traceback.print_exc()
+        warnings.warn("Fast record population failed. Switching to slower fallback")
+        for i, (path, obj) in enumerate(data.items()):
+            try:
+                storage.Blob(path, bucket).upload_from_string(json.dumps(obj))
+            except:
+                traceback.print_exc()
+                print("Hound record", path, "could not be written", file=sys.stderr)
+            if i % 10 == 0 and not (notified or main_thread.is_alive()):
+                print("Hound is still updating", len(data) - i, "records in the background. Python will close when it's done")
+                notified = True
 
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S %Z" # always UTC
 
