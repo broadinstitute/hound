@@ -420,7 +420,7 @@ class HoundClient(object):
         """
         if isinstance(src, list):
             src = iter(src)
-        if isinstance(src, str):
+        elif isinstance(src, str):
             src = self.get_entries(src)
         if entryType is not None:
             if entryType == 'logs':

@@ -10,12 +10,6 @@ workspace.
 This allows for attribute provenance to be reconstructed by querying the database
 history, and for external tools to log changes as well.
 
-## Minimum Viable Product
-1) Hound should be able to retain a log of when an entity/workspace attribute was changed, and why
-2) Hound should be able to respond to provenance queries by checking above log entries
-3) Hound should support logging arbitrary data (such as "a lapdog submission was run", etc)
-4) Hound should be external to lapdog/dalmatain
-
 ## Usage
 1) Users with hound-enabled software automatically generate logs as they continue
 to do their work
