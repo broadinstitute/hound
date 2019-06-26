@@ -125,6 +125,7 @@ class HoundClient(object):
         self.author = '{}@{}'.format(getuser(), gethostname())
         self.context_reason = threading.local()
         self._batch = threading.local()
+        self.__enabled = True
 
     def get_current_reason(self):
         if not hasattr(self.context_reason, 'reason'):
@@ -209,12 +210,25 @@ class HoundClient(object):
         if 'timestamp' not in data or data['timestamp'] is None:
             data['timestamp'] = time.strftime(TIMESTAMP_FORMAT, time.gmtime())
         path = os.path.join(path, self.snowflake_client.snowflake().hex())
-        if hasattr(self._batch, 'batch') and self._batch.batch is not None:
-            self._batch.batch.append((path, data))
-        else:
-            blob = storage.Blob(path, self.bucket)
-            blob.upload_from_string(json.dumps(data))
+        if self.__enabled:
+            if hasattr(self._batch, 'batch') and self._batch.batch is not None:
+                self._batch.batch.append((path, data))
+            else:
+                blob = storage.Blob(path, self.bucket)
+                blob.upload_from_string(json.dumps(data))
         return path
+
+    def disable(self):
+        """
+        Disables the hound client
+        """
+        self.__enabled = False
+
+    def enable(self):
+        """
+        Enables the hound client, if disabled
+        """
+        self.__enabled = True
 
     @autofill_reason
     def update_entity_attribute(self, etype, entity, attribute, value, reason=None):
