@@ -73,15 +73,16 @@ class SnowflakeClient(object):
                 self.client_id,
                 self.sequence_id,
             )
-            checksum = sum(head) % 256
-            out = head + bytes([checksum])
             self.sequence_id = (self.sequence_id + 1) % 65536
             self.last_time = ctime
-            return out
+        checksum = sum(head) % 256
+        out = head + bytes([checksum])
+        return out
 
     snowflake = __call__
 
-    def unpack(self, snowflake, validate=True):
+    @staticmethod
+    def unpack(snowflake, validate=True):
         """
         Unpacks a snowflake into it's components
         Returns a namedtuple
@@ -92,7 +93,7 @@ class SnowflakeClient(object):
         elif not isinstance(snowflake, bytes):
             raise TypeError("snowflake must be of type str or bytes")
         ctime, machine_id, client_id, sequence_id, checksum = struct.unpack(
-            self.FORMAT,
+            SnowflakeClient.FORMAT,
             snowflake
         )
         if validate and (sum(snowflake[:-2]) % 256) != checksum:
