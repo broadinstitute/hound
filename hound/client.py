@@ -9,7 +9,6 @@ from getpass import getuser
 import time
 import os
 import calendar
-import pandas as pd
 import threading
 import inspect
 from contextlib import contextmanager
@@ -99,6 +98,8 @@ def autofill_reason(func):
         if 'reason' not in arguments or arguments['reason'] is None:
             if self.get_current_reason() is not None:
                 arguments['reason'] = self.context_reason.reason
+            else:
+                arguments['reason'] = "No reason given"
         return func(**arguments)
 
     return call_with_reason
@@ -257,7 +258,7 @@ class HoundClient(object):
                 'entityName': entity,
                 'attributeName': attribute,
                 'attributeValue': value,
-                'updateReason': reason if reason is not None else "No reason given"
+                'updateReason': reason
             }
         )
         self.write(
@@ -291,7 +292,7 @@ class HoundClient(object):
                 'entityName': entity,
                 'attributeName': '__meta__',
                 'attributeValue': event,
-                'updateReason': reason if reason is not None else "No reason given"
+                'updateReason': reason
             }
         )
         self.write(
@@ -324,7 +325,7 @@ class HoundClient(object):
                 'entityName': 'workspace',
                 'attributeName': attribute,
                 'attributeValue': value,
-                'updateReason': reason if reason is not None else "No reason given"
+                'updateReason': reason
             }
         )
         self.write(
@@ -356,7 +357,7 @@ class HoundClient(object):
                 'entityName': 'workspace',
                 'attributeName': '__meta__',
                 'attributeValue': event,
-                'updateReason': reason if reason is not None else "No reason given"
+                'updateReason': reason
             }
         )
         self.write(

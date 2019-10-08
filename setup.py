@@ -17,9 +17,8 @@ setup(
     long_description = long_description,
     long_description_content_type = 'text/markdown',
     install_requires = [
-        "google-cloud-storage>=1.13.2",
+        "google-cloud-storage>=1.20.0",
         "google-auth>=1.6.3",
-        "pandas"
     ],
     classifiers = [
         "Development Status :: 4 - Beta",
